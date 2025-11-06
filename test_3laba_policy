@@ -1,0 +1,240 @@
+ТЕСТЫ ДЛЯ ROLE: user_lejena (segment_id = 1)
+Тест 1.1: Установка контекста сессии
+sql
+\c laba_3 user_lejena
+-- Пароль: 123
+
+SELECT app.set_session_ctx();
+--  ОЖИДАЕМ: "Session context set: segment_id = 1"
+
+SELECT current_setting('app.segment_id') as current_segment;
+--  ОЖИДАЕМ: "1"
+
+
+Тест 1.2: Чтение данных только своего сегмента
+sql
+SELECT username, segment_id FROM app.account ORDER BY username;
+--  ОЖИДАЕМ: Только пользователи с segment_id = 1
+-- user_lejena_1 (1)
+-- user_lejena_2 (1)
+
+SELECT name, segment_id FROM app.access_point ORDER BY name;
+--  ОЖИДАЕМ: Только точки доступа с segment_id = 1
+-- AP_LEJ_01 (1)
+-- AP_LEJ_02 (1)
+
+Тест 1.3: Попытка чтения чужих сегментов
+sql
+SELECT COUNT(*) as foreign_segments 
+FROM app.account 
+WHERE segment_id IN (5, 6, 4);
+--  ОЖИДАЕМ: 0
+
+SELECT COUNT(*) as foreign_access_points 
+FROM app.access_point 
+WHERE segment_id != 1;
+--  ОЖИДАЕМ: 0
+
+
+Тест 1.4: Корректная вставка в свой сегмент
+sql
+INSERT INTO app.account (username, password, role, person_id, segment_id) 
+VALUES ('test_lejena', 'test123', 1, 1, 1);
+--  ОЖИДАЕМ: УСПЕШНОЕ ВЫПОЛНЕНИЕ
+
+SELECT username FROM app.account WHERE username = 'test_lejena';
+--  ОЖИДАЕМ: Найдена 1 запись
+
+
+Тест 1.5: Попытка вставки в чужой сегмент
+sql
+INSERT INTO app.account (username, password, role, person_id, segment_id) 
+VALUES ('hacker_frunze', 'hack123', 1, 1, 5);
+--  ОЖИДАЕМ: ERROR - нарушение политики RLS
+
+
+Тест 1.6: Корректное обновление своего сегмента
+sql
+UPDATE app.account 
+SET username = 'updated_lejena' 
+WHERE username = 'test_lejena' AND segment_id = 1;
+--  ОЖИДАЕМ: 1 строка обновлена
+
+SELECT username FROM app.account WHERE username = 'updated_lejena';
+--  ОЖИДАЕМ: Найдена 1 запись
+
+Тест 1.7: Попытка обновления чужого сегмента
+sql
+UPDATE app.account 
+SET username = 'hacked' 
+WHERE segment_id = 5 AND username LIKE 'user_frunze%';
+--  ОЖИДАЕМ: 0 строк обновлено
+
+SELECT username FROM app.account WHERE username = 'hacked';
+--  ОЖИДАЕМ: 0 записей
+
+
+Тест 1.8: Корректное удаление из своего сегмента
+sql
+DELETE FROM app.account WHERE username = 'updated_lejena';
+--  ОЖИДАЕМ: 1 строка удалена
+
+SELECT username FROM app.account WHERE username = 'updated_lejena';
+--  ОЖИДАЕМ: 0 записей
+
+ТЕСТЫ ДЛЯ ROLE: user_frunze (segment_id = 5)
+Тест 2.1: Установка контекста сессии
+sql
+\c laba_3 user_frunze
+-- Пароль: 123
+
+SELECT app.set_session_ctx();
+--  ОЖИДАЕМ: "Session context set: segment_id = 5"
+
+SELECT current_setting('app.segment_id') as current_segment;
+--  ОЖИДАЕМ: "5"
+Тест 2.2: Чтение данных только своего сегмента
+sql
+SELECT username, segment_id FROM app.account ORDER BY username;
+--  ОЖИДАЕМ: Только пользователи с segment_id = 5
+-- user_frunze_1 (5)
+-- user_frunze_2 (5)
+
+SELECT name, segment_id FROM app.access_point ORDER BY name;
+--  ОЖИДАЕМ: Только точки доступа с segment_id = 5
+-- AP_FRUN_01 (5)
+-- AP_FRUN_02 (5)
+Тест 2.3: Проверка изоляции от user_lejena
+sql
+SELECT COUNT(*) as lejena_users 
+FROM app.account 
+WHERE segment_id = 1;
+--  ОЖИДАЕМ: 0
+
+SELECT username FROM app.account WHERE username LIKE 'user_lejena%';
+--  ОЖИДАЕМ: 0 записей
+Тест 2.4: Вставка и операции в своем сегменте
+sql
+INSERT INTO app.account (username, password, role, person_id, segment_id) 
+VALUES ('test_frunze', 'test123', 1, 1, 5);
+--  ОЖИДАЕМ: УСПЕХ
+
+UPDATE app.account 
+SET username = 'updated_frunze' 
+WHERE username = 'test_frunze';
+--  ОЖИДАЕМ: 1 строка обновлена
+
+DELETE FROM app.account WHERE username = 'updated_frunze';
+--  ОЖИДАЕМ: 1 строка удалена
+ТЕСТЫ ДЛЯ ROLE: user_bb (segment_id = 6)
+Тест 3.1: Установка контекста сессии
+sql
+\c laba_3 user_bb
+-- Пароль: 123
+
+SELECT app.set_session_ctx();
+--  ОЖИДАЕМ: "Session context set: segment_id = 6"
+
+SELECT current_setting('app.segment_id') as current_segment;
+--  ОЖИДАЕМ: "6"
+Тест 3.2: Проверка видимости только сегмента 6
+sql
+SELECT username, segment_id FROM app.account;
+--  ОЖИДАЕМ: Только user_bb_1 (6), user_bb_2 (6)
+
+SELECT name, segment_id FROM app.access_point;
+--  ОЖИДАЕМ: Только AP_BB_01 (6), AP_BB_02 (6)
+Тест 3.3: Проверка полной изоляции
+sql
+SELECT COUNT(*) as total_accounts FROM app.account;
+--  ОЖИДАЕМ: 2 (только свои записи)
+
+SELECT COUNT(*) as foreign_data 
+FROM app.account 
+WHERE segment_id NOT IN (6);
+--  ОЖИДАЕМ: 0
+ТЕСТЫ ДЛЯ ROLE: user_auditor (полный доступ)
+Тест 4.1: Установка контекста аудитора
+sql
+\c laba_3 user_auditor
+-- Пароль: auditor123
+
+SELECT app.set_session_ctx();
+--  ОЖИДАЕМ: УСПЕХ (специальная логика для auditor)
+
+SELECT current_setting('app.segment_id') as current_segment;
+--  ОЖИДАЕМ: "0" (специальное значение для полного доступа)
+Тест 4.2: Проверка видимости ВСЕХ данных
+sql
+SELECT segment_id, COUNT(*) as user_count 
+FROM app.account 
+GROUP BY segment_id 
+ORDER BY segment_id;
+--  ОЖИДАЕМ: Записи из ВСЕХ сегментов (1, 4, 5, 6)
+
+SELECT segment_id, COUNT(*) as ap_count 
+FROM app.access_point 
+GROUP BY segment_id 
+ORDER BY segment_id;
+--  ОЖИДАЕМ: Записи из ВСЕХ сегментов (1, 5, 6)
+Тест 4.3: Проверка операций над всеми сегментами
+sql
+-- Аудитор может читать любые данные
+SELECT COUNT(*) as total_users FROM app.account;
+--  ОЖИДАЕМ: > 6 (все пользователи всех сегментов)
+
+-- Аудитор может вставлять в любой сегмент
+INSERT INTO app.account (username, password, role, person_id, segment_id) 
+VALUES ('auditor_test', 'pass', 1, 1, 1);
+--  ОЖИДАЕМ: УСПЕХ
+
+INSERT INTO app.account (username, password, role, person_id, segment_id) 
+VALUES ('auditor_test_2', 'pass', 1, 1, 5);
+--  ОЖИДАЕМ: УСПЕХ
+Тест 4.4: Проверка кросс-сегментных операций
+sql
+-- Аудитор может обновлять любые записи
+UPDATE app.account 
+SET username = 'auditor_updated' 
+WHERE username IN ('user_lejena_1', 'user_frunze_1');
+--  ОЖИДАЕМ: 2 строки обновлено (из разных сегментов)
+
+-- Аудитор может удалять любые записи
+DELETE FROM app.account 
+WHERE username LIKE 'auditor_test%';
+--  ОЖИДАЕМ: 2 строки удалено
+ТЕСТЫ МЕЖСЕГМЕНТНОЙ ИЗОЛЯЦИИ
+Тест 5.1: Сравнение видимости данных между пользователями
+sql
+-- Под user_lejena
+\c laba_3 user_lejena
+SELECT app.set_session_ctx();
+SELECT COUNT(*) as lejena_count FROM app.account;
+
+-- Под user_frunze  
+\c laba_3 user_frunze
+SELECT app.set_session_ctx();
+SELECT COUNT(*) as frunze_count FROM app.account;
+
+-- Под user_bb
+\c laba_3 user_bb
+SELECT app.set_session_ctx();
+SELECT COUNT(*) as bb_count FROM app.account;
+
+--  ОЖИДАЕМ: lejena_count != frunze_count != bb_count
+--  ОЖИДАЕМ: Каждый пользователь видит РАЗНЫЙ набор данных
+Тест 5.2: Проверка неизменности чужих данных
+sql
+-- user_lejena пытается изменить данные user_frunze
+\c laba_3 user_lejena
+SELECT app.set_session_ctx();
+
+SELECT username FROM app.account WHERE segment_id = 5;
+-- Запоминаем исходные данные
+
+-- user_frunze проверяет, что его данные не изменились
+\c laba_3 user_frunze
+SELECT app.set_session_ctx();
+
+SELECT username FROM app.account WHERE segment_id = 5;
+--  ОЖИДАЕМ: Данные идентичны исходным
