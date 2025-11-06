@@ -1,0 +1,75 @@
+\c - user_writer
+
+-- 2.1. Попытка прямой вставки в ref.person — запрещено
+SELECT '!! Test1: user_writer cannot INSERT into ref.person !!' AS test;
+INSERT INTO ref.person (name, surname, birthday, gender) VALUES ('Test', 'User', '1990-01-01', 'M');
+
+-- 2.2. Вызов функции с невалидным account_id — ошибка валидации
+SELECT '!! Test2: issue_card_for_account with non-existent account !!' AS test;
+SELECT app.issue_card_for_account(999999, 'CARD-BAD');
+
+-- 2.3. Вызов функции с дублирующим номером карты — ошибка уникальности
+SELECT '!! Test3: issue_card_for_account with duplicate card number !!' AS test;
+SELECT app.issue_card_for_account(1, 'CARD-001');
+
+-- 2.4. Успешная выдача новой карты
+SELECT '!! Test4: issue_card_for_account success !!' AS test;
+SELECT app.issue_card_for_account(2, 'CARD-TEST-001') AS new_card_id;
+
+-- 2.5. Назначение доступа к несуществующей точке — ошибка
+SELECT '!! Test5: grant_access_to_point with invalid ap_id !!' AS test;
+SELECT app.grant_access_to_point(1, 999999, NOW());
+
+SELECT '!! Test6: grant_access_to_point with valid ap_id !!' AS test;
+SELECT app.grant_access_to_point(1, 1, NOW());
+
+-- 2.7. Успешное назначение права доступа
+SELECT '!! Test7: grant_access_to_point success !!' AS test;
+SELECT app.grant_access_to_point(2, 2, NOW(), NOW() + INTERVAL '1 year') AS right_id;
+
+-- 2.8. Регистрация попытки доступа без права — автоматически DENIED
+SELECT '!! Test8: log_access_attempt without access -> DENIED !!' AS test;
+SELECT app.log_access_attempt(
+    p_person_id := 5,  -- guest1  нет доступа к точке 1
+    p_ap_id := 1,
+    p_method_id := 1
+) AS event_id;
+
+-- 2.9. Регистрация попытки с валидным доступом — GRANTED
+SELECT '!! Test9: log_access_attempt with access -> GRANTED !!' AS test;
+SELECT app.log_access_attempt(
+    p_person_id := 1,  -- admin доступ ко всему
+    p_ap_id := 2,
+    p_method_id := 1
+) AS event_id;
+
+
+\c - user_dml
+
+-- 4.1. Прямая вставка в app.access_right к неактивной точке — должна упасть из-за триггера!
+UPDATE app.access_point SET is_active = false WHERE ap_id = 4;
+SELECT '!! Test10: Direct INSERT into access_right to inactive point -> blocked by trigger !!' AS test;
+INSERT INTO app.access_right (person_id, ap_id, valid_from) VALUES (1, 4, NOW());
+--восстановление
+UPDATE app.access_point SET is_active = true WHERE ap_id = 4;
+
+SELECT '!! Test11: Direct INSERT into access_right to active point -> success !!' AS test;
+INSERT INTO app.access_right (person_id, ap_id, valid_from) VALUES (1, 4, NOW());
+
+
+
+\c - user_auditor
+
+SELECT '!! Test12: Content of audit.function_calls !!' AS test;
+SELECT
+    call_time,
+    function_name,
+    caller_role,
+    input_params,
+    success,
+    error_message
+FROM audit.function_calls
+ORDER BY call_time;
+
+
+
